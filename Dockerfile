@@ -1,5 +1,5 @@
 # Stage 1: Build Go binary
-FROM --platform=linux/amd64 golang:1.22-alpine AS builder
+FROM --platform=linux/amd64 golang:1.22-alpine AS build
 
 WORKDIR /app
 COPY main.go .
