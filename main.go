@@ -63,5 +63,7 @@ func main() {
 	http.HandleFunc("/", jqHandler)
 	port := "8080"
 	log.Println("Server starting on port", port)
-	log.Fatal(http.ListenAndServe(":"+port, nil))
+	if err := http.ListenAndServe(":"+port, nil); err != nil {
+		log.Fatalf("ListenAndServe error: %v", err)
+	}
 }
