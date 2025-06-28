@@ -1,24 +1,21 @@
-# -------- Stage 1: Build Go server for ARM64 --------
-FROM --platform=linux/arm64 golang:1.21 AS build
+# Stage 1: Build Go binary
+FROM --platform=linux/amd64 golang:1.22-alpine AS builder
+
+WORKDIR /src
+COPY main.go .
+RUN go build -o app main.go
+
+# Stage 2: Minimal runtime image
+FROM --platform=linux/amd64 alpine:3.19
+
+# Install curl for downloading jq, then clean up
+RUN apk add --no-cache curl && \
+    curl -L -o /usr/local/bin/jq https://github.com/jqlang/jq/releases/latest/download/jq-linux-amd64 && \
+    chmod +x /usr/local/bin/jq && \
+    apk del curl
 
 WORKDIR /app
-COPY main.go .
-
-# Build a statically linked Go binary
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o server main.go
-
-# -------- Stage 2: Runtime image with jq --------
-FROM --platform=linux/arm64 ubuntu:22.04
-
-# Install jq and required dependencies
-RUN apt-get update && \
-    apt-get install -y jq ca-certificates && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
-
-# Copy the Go server binary
-COPY --from=build /app/server /server
+COPY --from=builder /src/app .
 
 EXPOSE 8080
-
-CMD ["/server"]
+ENTRYPOINT ["./app"]
