@@ -1,9 +1,11 @@
 # Stage 1: Build Go binary
 FROM --platform=linux/amd64 golang:1.22-alpine AS builder
 
-WORKDIR /src
+WORKDIR /app
 COPY main.go .
-RUN go build -o app main.go
+
+# Build a statically linked Go binary
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o server main.go
 
 # Stage 2: Minimal runtime image
 FROM --platform=linux/amd64 alpine:3.19
@@ -14,8 +16,9 @@ RUN apk add --no-cache curl && \
     chmod +x /usr/local/bin/jq && \
     apk del curl
 
-WORKDIR /app
-COPY --from=builder /src/app .
+# Copy the Go server binary
+COPY --from=build /app/server /server
 
 EXPOSE 8080
-ENTRYPOINT ["./app"]
+
+CMD ["/server"]
