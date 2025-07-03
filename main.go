@@ -2,11 +2,13 @@ package main
 
 import (
 	"bytes"
+	"compress/brotli"
 	"encoding/json"
 	"io"
 	"log"
 	"net/http"
 	"os/exec"
+	"strings"
 )
 
 func jqHandler(w http.ResponseWriter, r *http.Request) {
@@ -18,12 +20,24 @@ func jqHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	log.Println("jq filter:", jqFilter)
 
-	// Read JSON body
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		log.Println("Error reading request body:", err)
-		http.Error(w, "Failed to read request body", http.StatusBadRequest)
-		return
+	// Handle optional Brotli encoding for request body
+	var body []byte
+	var err error
+	if strings.Contains(r.Header.Get("Content-Encoding"), "br") {
+		br := brotli.NewReader(r.Body)
+		body, err = io.ReadAll(br)
+		if err != nil {
+			log.Println("Error reading brotli-compressed request body:", err)
+			http.Error(w, "Failed to read brotli-compressed request body", http.StatusBadRequest)
+			return
+		}
+	} else {
+		body, err = io.ReadAll(r.Body)
+		if err != nil {
+			log.Println("Error reading request body:", err)
+			http.Error(w, "Failed to read request body", http.StatusBadRequest)
+			return
+		}
 	}
 
 	// Validate and reformat input JSON
@@ -55,8 +69,21 @@ func jqHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	io.Copy(w, &out)
+	// If request was Brotli, respond Brotli-compressed
+	if strings.Contains(r.Header.Get("Content-Encoding"), "br") {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Encoding", "br")
+		w.WriteHeader(http.StatusOK)
+		brWriter := brotli.NewWriterLevel(w, brotli.BestCompression)
+		_, err := brWriter.Write(out.Bytes())
+		if err != nil {
+			log.Println("Error writing brotli-compressed response:", err)
+		}
+		brWriter.Close()
+	} else {
+		w.Header().Set("Content-Type", "application/json")
+		io.Copy(w, &out)
+	}
 }
 
 func main() {
