@@ -5,9 +5,6 @@ WORKDIR /app
 
 COPY go.mod go.sum main.go .
 
-# 3. Download dependencies (includes brotli)
-RUN go mod download
-
 # Build a statically linked Go binary
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o server main.go
 
