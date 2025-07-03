@@ -2,13 +2,14 @@ package main
 
 import (
 	"bytes"
-	"compress/brotli"
 	"encoding/json"
 	"io"
 	"log"
 	"net/http"
 	"os/exec"
 	"strings"
+
+	"github.com/andybalholm/brotli"
 )
 
 func jqHandler(w http.ResponseWriter, r *http.Request) {
