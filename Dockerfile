@@ -2,7 +2,11 @@
 FROM --platform=linux/amd64 golang:1.22-alpine AS build
 
 WORKDIR /app
-COPY main.go .
+
+COPY go.mod go.sum main.go .
+
+# 3. Download dependencies (includes brotli)
+RUN go mod download
 
 # Build a statically linked Go binary
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o server main.go
@@ -16,9 +20,11 @@ RUN apk add --no-cache curl && \
     chmod +x /usr/local/bin/jq && \
     apk del curl
 
-# Copy the Go server binary
+# 7. Copy the built binary from the build stage
 COPY --from=build /app/server /server
 
+# 9. Expose the port your app runs on (optional)
 EXPOSE 8080
 
+# 10. Run your Go binary
 CMD ["/server"]
