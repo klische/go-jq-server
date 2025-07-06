@@ -2,14 +2,13 @@ package main
 
 import (
 	"bytes"
+	"compress/gzip"
 	"encoding/json"
 	"io"
 	"log"
 	"net/http"
 	"os/exec"
 	"strings"
-
-	"github.com/andybalholm/brotli"
 )
 
 func jqHandler(w http.ResponseWriter, r *http.Request) {
@@ -21,24 +20,24 @@ func jqHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	log.Println("jq filter:", jqFilter)
 
-	// Handle optional Brotli encoding for request body
-	var body []byte
-	var err error
-	if strings.Contains(r.Header.Get("Content-Encoding"), "br") {
-		br := brotli.NewReader(r.Body)
-		body, err = io.ReadAll(br)
-		if err != nil {
-			log.Println("Error reading brotli-compressed request body:", err)
-			http.Error(w, "Failed to read brotli-compressed request body", http.StatusBadRequest)
-			return
-		}
-	} else {
-		body, err = io.ReadAll(r.Body)
-		if err != nil {
-			log.Println("Error reading request body:", err)
-			http.Error(w, "Failed to read request body", http.StatusBadRequest)
-			return
-		}
+	// Require Gzip encoding for request body
+	if !strings.Contains(r.Header.Get("Content-Encoding"), "gzip") {
+		http.Error(w, "Only gzip-compressed request bodies are accepted. Please set Content-Encoding: gzip.", http.StatusUnsupportedMediaType)
+		return
+	}
+
+	gz, gzErr := gzip.NewReader(r.Body)
+	if gzErr != nil {
+		log.Println("Error creating gzip reader:", gzErr)
+		http.Error(w, "Failed to create gzip reader", http.StatusBadRequest)
+		return
+	}
+	defer gz.Close()
+	body, err := io.ReadAll(gz)
+	if err != nil {
+		log.Println("Error reading gzip-compressed request body:", err)
+		http.Error(w, "Failed to read gzip-compressed request body", http.StatusBadRequest)
+		return
 	}
 
 	// Validate and reformat input JSON
@@ -70,21 +69,16 @@ func jqHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// If request was Brotli, respond Brotli-compressed
-	if strings.Contains(r.Header.Get("Content-Encoding"), "br") {
-		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Content-Encoding", "br")
-		w.WriteHeader(http.StatusOK)
-		brWriter := brotli.NewWriterLevel(w, brotli.BestCompression)
-		_, err := brWriter.Write(out.Bytes())
-		if err != nil {
-			log.Println("Error writing brotli-compressed response:", err)
-		}
-		brWriter.Close()
-	} else {
-		w.Header().Set("Content-Type", "application/json")
-		io.Copy(w, &out)
+	// Always respond Gzip-compressed
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Encoding", "gzip")
+	w.WriteHeader(http.StatusOK)
+	gzWriter := gzip.NewWriter(w)
+	_, err = gzWriter.Write(out.Bytes())
+	if err != nil {
+		log.Println("Error writing gzip-compressed response:", err)
 	}
+	gzWriter.Close()
 }
 
 func main() {
