@@ -1,27 +1,32 @@
-# Stage 1: Build Go binary
-FROM --platform=linux/amd64 golang:1.24.4-alpine AS build
+# ----------- Build stage -----------
+FROM golang:1.24.4 AS builder
 
+# Set working directory
 WORKDIR /app
 
-COPY go.mod go.sum main.go .
+# Copy Go module files
+COPY go.mod go.sum ./
+RUN go mod download
 
-# Build a statically linked Go binary
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o server main.go
+# Copy the application code
+COPY main.go ./
 
-# Stage 2: Minimal runtime image
-FROM --platform=linux/amd64 alpine:3.19
+# Build the binary for Lambda's custom runtime
+# name it "bootstrap" as required by Lambda
+RUN CGO_ENABLED=0 GOOS=linux go build -o bootstrap main.go
 
-# Install curl for downloading jq, then clean up
-RUN apk add --no-cache curl && \
-    curl -L -o /usr/local/bin/jq https://github.com/jqlang/jq/releases/latest/download/jq-linux-amd64 && \
-    chmod +x /usr/local/bin/jq && \
-    apk del curl
+# ----------- Final stage (Lambda) -----------
+FROM public.ecr.aws/lambda/provided:al2
 
-# 7. Copy the built binary from the build stage
-COPY --from=build /app/server /server
+# Copy the built Go binary
+COPY --from=builder /app/bootstrap /var/task/bootstrap
 
-# 9. Expose the port your app runs on (optional)
-EXPOSE 8080
+# Install jq (latest) in the final Lambda container
+RUN curl -L -o /usr/local/bin/jq https://github.com/stedolan/jq/releases/download/jq-1.8.1/jq-linux64 \
+    && chmod +x /usr/local/bin/jq
 
-# 10. Run your Go binary
-CMD ["/server"]
+# (Optional) set an environment variable to help with debugging
+ENV JQ_PATH=/usr/local/bin/jq
+
+# Lambda will run /var/task/bootstrap automatically
+ENTRYPOINT ["/var/task/bootstrap"]
