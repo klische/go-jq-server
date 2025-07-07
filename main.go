@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"log"
@@ -25,14 +26,29 @@ func handler(ctx context.Context, req events.APIGatewayProxyRequest) (events.API
 	log.Println("jq filter:", jqFilter)
 
 	// Require Gzip encoding for request body
-	if !strings.Contains(req.Headers["Content-Encoding"], "gzip") {
+	if !strings.Contains(req.Headers["content-encoding"], "gzip") {
 		return events.APIGatewayProxyResponse{
 			StatusCode: 415,
 			Body:       "Only gzip-compressed request bodies are accepted. Please set Content-Encoding: gzip.",
 		}, nil
 	}
 
-	gz, err := gzip.NewReader(bytes.NewReader([]byte(req.Body)))
+	var bodyBytes []byte
+	var err error
+	if req.IsBase64Encoded {
+		bodyBytes, err = base64.StdEncoding.DecodeString(req.Body)
+		if err != nil {
+			log.Println("Error decoding base64 body:", err)
+			return events.APIGatewayProxyResponse{
+				StatusCode: 400,
+				Body:       "Failed to decode base64 body",
+			}, nil
+		}
+	} else {
+		bodyBytes = []byte(req.Body)
+	}
+
+	gz, err := gzip.NewReader(bytes.NewReader(bodyBytes))
 	if err != nil {
 		log.Println("Error creating gzip reader:", err)
 		return events.APIGatewayProxyResponse{
